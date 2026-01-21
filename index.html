@@ -95,6 +95,13 @@
             opacity: 1;
         }
 
+        /* Hidden canvas for mobile copying */
+        #copyCanvas {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+        }
+
         @media (max-width: 768px) {
             .gallery {
                 grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -116,9 +123,9 @@
 <body>
     <div class="container">
         <header>
-            <h1>🏀 NBA Quote Memes</h1>
+            <h1> NBA Quote Memes</h1>
+            <p class="subtitle"> Tap any meme to copy it to your clipboard 🏀 </p>
         </header>
-
         <div class="gallery" id="gallery"></div>
     </div>
 
@@ -126,45 +133,47 @@
         ✓ Meme copied! Ready to share
     </div>
 
+    <canvas id="copyCanvas"></canvas>
+
     <script>
         // LIST ALL YOUR IMAGE FILENAMES HERE:
- const imageFiles = [
-    '0_adamsilver.webp',
-    '0_bron.jpg',
-    '0_dion.webp',
-    '0_jallen.webp',
-    '0_jbrown.webp',
-    '0_mj.jpg',
-    '0_nurk.jpg',
-    '0_vince_carter.jpg',
-    '1_ant.webp',
-    '1_ayton.jpg',
-    '1_bol.webp',
-    '1_camthomas.jpg',
-    '1_chuck.jpg',
-    '1_cp.jpg',
-    '1_dmitch.jpg',
-    '1_embiid.webp',
-    '1_giannis.webp',
-    '1_hali.jpg',
-    '1_jae_crowder.jpg',
-    '1_kd.webp',
-    '1_kuz.webp',
-    '1_markjackson.jpg',
-    '1_mpj.jpg',
-    '1_pat_bev.jpg',
-    '1_rudy.jpg',
-    '1_russ.webp',
-    '1_scoot.jpg',
-    '2_boogie.jpg',
-    '2_kawhi.jpg',
-    '2_klay.jpg',
-    '2_lawal.jpg',
-    '2_melo.jpg',
-    '2_scottie.webp',
-    '2_shaq.jpg',
-    '2_thanasis.jpg',
-];
+        const imageFiles = [
+            '0_adamsilver.webp',
+            '0_bron.jpg',
+            '0_dion.webp',
+            '0_jallen.webp',
+            '0_jbrown.webp',
+            '0_mj.jpg',
+            '0_nurk.jpg',
+            '0_vince_carter.jpg',
+            '1_ant.webp',
+            '1_ayton.jpg',
+            '1_bol.webp',
+            '1_camthomas.jpg',
+            '1_chuck.jpg',
+            '1_cp.jpg',
+            '1_dmitch.jpg',
+            '1_embiid.webp',
+            '1_giannis.webp',
+            '1_hali.jpg',
+            '1_jae_crowder.jpg',
+            '1_kd.webp',
+            '1_kuz.webp',
+            '1_markjackson.jpg',
+            '1_mpj.jpg',
+            '1_pat_bev.jpg',
+            '1_rudy.jpg',
+            '1_russ.webp',
+            '1_scoot.jpg',
+            '2_boogie.jpg',
+            '2_kawhi.jpg',
+            '2_klay.jpg',
+            '2_lawal.jpg',
+            '2_melo.jpg',
+            '2_scottie.webp',
+            '2_shaq.jpg',
+            '2_thanasis.jpg',
+        ];
 
         const memes = imageFiles.map((filename, index) => ({
             id: index + 1,
@@ -174,17 +183,15 @@
 
         const gallery = document.getElementById('gallery');
         const notification = document.getElementById('notification');
+        const canvas = document.getElementById('copyCanvas');
+        const ctx = canvas.getContext('2d');
 
         function renderMemes(memesToRender) {
             gallery.innerHTML = '';
-
             memesToRender.forEach(meme => {
                 const card = document.createElement('div');
                 card.className = 'meme-card';
-                card.innerHTML = `
-                    <img src="${meme.url}" alt="NBA Meme">
-                `;
-                
+                card.innerHTML = `<img src="${meme.url}" alt="NBA Meme" crossorigin="anonymous">`;
                 card.addEventListener('click', () => copyMeme(meme.url));
                 gallery.appendChild(card);
             });
@@ -192,42 +199,76 @@
 
         async function copyMeme(imageUrl) {
             try {
+                // Fetch the image
                 const response = await fetch(imageUrl);
                 if (!response.ok) throw new Error('Failed to fetch image');
-                
                 const blob = await response.blob();
-                
-                try {
-                    await navigator.clipboard.write([
-                        new ClipboardItem({
-                            [blob.type]: blob
-                        })
-                    ]);
-                    showNotification('✓ Meme copied! Ready to share');
-                } catch (clipboardErr) {
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = imageUrl.split('/').pop();
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    showNotification('✓ Downloaded!');
+
+                // Try modern Clipboard API first (works on desktop and some mobile)
+                if (navigator.clipboard && ClipboardItem) {
+                    try {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({ [blob.type]: blob })
+                        ]);
+                        showNotification('✓ Copied to clipboard!');
+                        return;
+                    } catch (clipboardErr) {
+                        console.log('Clipboard API failed, trying canvas method...');
+                    }
                 }
+
+                // Fallback: Use canvas method for mobile
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                    img.src = URL.createObjectURL(blob);
+                });
+
+                // Draw to canvas
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                // Convert canvas to blob
+                canvas.toBlob(async (canvasBlob) => {
+                    if (!canvasBlob) {
+                        throw new Error('Canvas conversion failed');
+                    }
+
+                    // Try clipboard again with canvas blob
+                    if (navigator.clipboard && ClipboardItem) {
+                        try {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({ 'image/png': canvasBlob })
+                            ]);
+                            showNotification('✓ Copied to clipboard!');
+                            return;
+                        } catch (err) {
+                            console.log('Canvas clipboard failed too');
+                        }
+                    }
+
+                    // If all else fails, show helpful message
+                    showNotification('📱 Tap & hold the image to copy', true);
+                }, 'image/png');
+
             } catch (err) {
                 console.error('Failed to copy:', err);
-                showNotification('❌ Failed to copy. Try right-click → Save Image');
+                showNotification('📱 Tap & hold the image to copy', true);
             }
         }
 
-        function showNotification(message) {
+        function showNotification(message, isLongDuration = false) {
             notification.textContent = message;
-            notification.style.background = message.includes('❌') ? '#f44336' : '#4caf50';
+            notification.style.background = message.includes('❌') || message.includes('📱') ? '#ff9800' : '#4caf50';
             notification.classList.add('show');
+            
             setTimeout(() => {
                 notification.classList.remove('show');
-            }, 2500);
+            }, isLongDuration ? 4000 : 2500);
         }
 
         renderMemes(memes);
